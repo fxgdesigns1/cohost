@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+google-api-python-client
+google-auth
+google-auth-oauthlib
+pydantic[dotenv]
+google-cloud-aiplatform
+google-cloud-firestore
+python-multipart
