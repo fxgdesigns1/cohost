@@ -27,6 +27,10 @@ class Settings(BaseSettings):
 settings = Settings()
 app = FastAPI(title="AI Cohost (Multi-tenant)")
 
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
 # ---------- Tenant onboarding ----------
 @app.post("/tenants/register")
 def tenant_register(hostId: str, hostEmail: str):
