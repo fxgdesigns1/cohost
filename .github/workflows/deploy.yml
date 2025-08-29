@@ -22,7 +22,7 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Configure Docker
-        run: gcloud auth configure-docker europe-west2-docker.pkg.dev
+        run: gcloud auth configure-docker europe-west2-docker.pkg.dev -q
 
       - name: Create Artifact Registry repository
         run: |
@@ -33,7 +33,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          IMAGE="europe-west2-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cohost/api:${{ github.sha }}"
+          IMAGE="europe-west2-docker.pkg.dev/extended-pagoda-468815-u6/cohost/api:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
@@ -47,4 +47,5 @@ jobs:
             --allow-unauthenticated \
             --min-instances=0 \
             --max-instances=2 \
+            --verbosity=debug \
             --set-env-vars="GOOGLE_REDIRECT_URI=https://cohost-api-uc.a.run.app/oauth2/callback/google,OAUTH_CLIENT_ID=95608923300-8fafj7ejgvnu74no5id9gsrkcqe5hgg0.apps.googleusercontent.com,OAUTH_CLIENT_SECRET=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,BASE_URL=https://cohost-api-uc.a.run.app,SECRET_KEY=production-super-random-string,APPROVE_MODE=false,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_LOCATION=europe-west2,MODEL=gemini-1.5-pro"
