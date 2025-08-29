@@ -11,24 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Configure Artifact Registry
-        run: |
-          gcloud auth configure-docker europe-west2-docker.pkg.dev
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Build & Push
+      - name: Configure Docker
+        run: gcloud auth configure-docker europe-west2-docker.pkg.dev
+
+      - name: Create Artifact Registry repository
+        run: |
+          gcloud artifacts repositories create cohost \
+            --repository-format=docker \
+            --location=europe-west2 \
+            --quiet || echo "Repository already exists"
+
+      - name: Build and push Docker image
         run: |
           IMAGE="europe-west2-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/cohost/api:${{ github.sha }}"
-          gcloud artifacts repositories create cohost --repository-format=docker --location=europe-west2 --quiet || true
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
