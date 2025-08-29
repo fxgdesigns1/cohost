@@ -1,4 +1,5 @@
 name: Deploy to Cloud Run
+
 on:
   push:
     branches: [ main ]
@@ -7,45 +8,80 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
-    steps:
-      - uses: actions/checkout@v4
+      contents: read
+      id-token: write
 
-      - name: Authenticate to Google Cloud
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Auth to GCP using your service account JSON secret
+      - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Set up Cloud SDK
+      - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
+          install_components: 'beta'
 
-      - name: Configure Docker
-        run: gcloud auth configure-docker europe-west2-docker.pkg.dev -q
-
-      - name: Create Artifact Registry repository
+      - name: Versions
         run: |
-          gcloud artifacts repositories create cohost \
-            --repository-format=docker \
-            --location=europe-west2 \
-            --quiet || echo "Repository already exists"
+          set -x
+          gcloud --version
+          docker --version
 
-      - name: Build and push Docker image
+      - name: Ensure Artifact Registry exists
         run: |
-          IMAGE="europe-west2-docker.pkg.dev/extended-pagoda-468815-u6/cohost/api:${{ github.sha }}"
+          set -euxo pipefail
+          gcloud artifacts repositories list --location=europe-west2 --format='value(name)' \
+            | grep '^cohost$' || gcloud artifacts repositories create cohost \
+                 --repository-format=docker --location=europe-west2
+
+      # 🔐 Force docker login to AR with access token (more reliable than only configure-docker)
+      - name: Login to Artifact Registry
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euxo pipefail
+          gcloud auth configure-docker europe-west2-docker.pkg.dev --quiet
+          gcloud auth print-access-token | docker login -u oauth2accesstoken \
+            --password-stdin https://europe-west2-docker.pkg.dev
+          docker info
+
+      # 🧪 Tiny test push (fast fail if perms/registry are wrong)
+      - name: Sanity push tiny image
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euxo pipefail
+          TEST="europe-west2-docker.pkg.dev/${PROJECT_ID}/cohost/ping:$(date +%s)"
+          printf 'FROM busybox\nCMD ["echo","ok"]\n' > Dockerfile.test
+          docker build -f Dockerfile.test -t "$TEST" .
+          timeout 180s docker push "$TEST"
+
+      # 🏗️ Build & push your real image
+      - name: Build & Push app image
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euxo pipefail
+          IMAGE="europe-west2-docker.pkg.dev/${PROJECT_ID}/cohost/api:${{ github.sha }}"
           docker build -t "$IMAGE" .
-          docker push "$IMAGE"
+          timeout 600s docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
+      # 🚀 Deploy to Cloud Run (with verbose logs)
       - name: Deploy to Cloud Run
         run: |
+          set -euxo pipefail
           gcloud run deploy cohost-api \
-            --image="$IMAGE" \
-            --region=europe-west2 \
-            --platform=managed \
+            --image "${IMAGE}" \
+            --region europe-west2 \
+            --platform managed \
             --allow-unauthenticated \
             --min-instances=0 \
             --max-instances=2 \
-            --verbosity=debug \
-            --set-env-vars="GOOGLE_REDIRECT_URI=https://cohost-api-uc.a.run.app/oauth2/callback/google,OAUTH_CLIENT_ID=95608923300-8fafj7ejgvnu74no5id9gsrkcqe5hgg0.apps.googleusercontent.com,OAUTH_CLIENT_SECRET=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,BASE_URL=https://cohost-api-uc.a.run.app,SECRET_KEY=production-super-random-string,APPROVE_MODE=false,GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCP_LOCATION=europe-west2,MODEL=gemini-1.5-pro"
+            --verbosity=debug
