@@ -10,7 +10,7 @@ from app.approvals import verify_token
 from app.datastore import get_draft, set_draft_status, delete_draft, log_message, upsert_thread_marker
 
 class Settings(BaseSettings):
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/oauth2/callback/google"
+    OAUTH_REDIRECT_URI: str = "http://localhost:8000/oauth2/callback/google"
     OAUTH_CLIENT_ID: str = ""
     OAUTH_CLIENT_SECRET: str = ""
     BASE_URL: str = "http://localhost:8000"
@@ -52,7 +52,7 @@ def oauth_start(hostId: str):
     if not get_tenant(hostId):
         raise HTTPException(status_code=400, detail="Unknown hostId. Call /tenants/register first.")
     from app.gmail_io import oauth_flow
-    flow = oauth_flow("client_secret.json", settings.GOOGLE_REDIRECT_URI)
+    flow = oauth_flow("client_secret.json", settings.OAUTH_REDIRECT_URI)
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -72,7 +72,7 @@ def oauth_callback(request: Request):
         return JSONResponse({"ok": False, "error": "unknown_host"}, status_code=400)
 
     from app.gmail_io import oauth_flow
-    flow = oauth_flow("client_secret.json", settings.GOOGLE_REDIRECT_URI)
+    flow = oauth_flow("client_secret.json", settings.OAUTH_REDIRECT_URI)
     flow.fetch_token(code=code)
     creds = flow.credentials
     save_gmail_creds(host_id, {
